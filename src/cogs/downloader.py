@@ -1,14 +1,16 @@
 import asyncio
 import logging
 import math
+import mimetypes
 import os
 import platform
-import shutil
 import traceback
+from typing import Any
 
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    Message,
     Update,
 )
 from telegram.ext import ContextTypes, filters
@@ -20,17 +22,80 @@ from ..middlewares.handlers import (
     message_handler,
 )
 from ..models import DownloadFile, downloading_files
-from ..utils import check_file_exists, env, get_file
+from ..utils import check_file_exists, env
+from ..utils.telethon_downloader import download_message_with_progress, format_eta
 
 logger = logging.getLogger(__name__)
 
 # Environment variables
-BOT_TOKEN = env.BOT_TOKEN
-BOT_API_DIR = env.BOT_API_DIR
 DOWNLOAD_TO_DIR = env.DOWNLOAD_TO_DIR
 
-# Replacing colons with a different character for Windows
-TOKEN_SUB_DIR = BOT_TOKEN.replace(":", "") if os.name == "nt" else BOT_TOKEN
+DOWNLOADABLE_MEDIA_FILTER = (
+    filters.Document.ALL
+    | filters.PHOTO
+    | filters.VIDEO
+    | filters.AUDIO
+    | filters.VOICE
+    | filters.VIDEO_NOTE
+    | filters.ANIMATION
+    | filters.Sticker.ALL
+)
+
+
+def get_downloadable_media(message: Message) -> tuple[Any, str] | None:
+    if message.document:
+        return message.document, "file"
+    if message.photo:
+        return message.photo[-1], "photo"
+
+    for attribute, media_type in (
+        ("video", "video"),
+        ("audio", "audio"),
+        ("voice", "voice"),
+        ("video_note", "video_note"),
+        ("animation", "animation"),
+        ("sticker", "sticker"),
+    ):
+        media = getattr(message, attribute)
+        if media:
+            return media, media_type
+    return None
+
+
+def get_media_file_details(message: Message) -> tuple[str, str, int] | None:
+    downloadable_media = get_downloadable_media(message)
+    if downloadable_media is None:
+        return None
+
+    media, media_type = downloadable_media
+    file_name = getattr(media, "file_name", None)
+    if not file_name:
+        if media_type == "sticker":
+            extension = (
+                ".webm"
+                if media.is_video
+                else ".tgs"
+                if media.is_animated
+                else ".webp"
+            )
+        else:
+            extension = mimetypes.guess_extension(getattr(media, "mime_type", "") or "")
+            if not extension:
+                extension = {
+                    "photo": ".jpg",
+                    "video": ".mp4",
+                    "audio": ".mp3",
+                    "voice": ".ogg",
+                    "video_note": ".mp4",
+                    "animation": ".mp4",
+                }.get(media_type, "")
+        file_name = f"{media_type}_{message.message_id}{extension}"
+
+    file_name = os.path.basename(file_name.replace("\\", "/"))
+    if not file_name:
+        file_name = f"{media_type}_{message.message_id}"
+
+    return media.file_id, file_name, getattr(media, "file_size", 0) or 0
 
 
 @command_handler("status")
@@ -67,39 +132,38 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await asyncio.sleep(0.3)
 
 
-@message_handler(filters.Document.VIDEO)
+@message_handler(DOWNLOADABLE_MEDIA_FILTER)
 @auth_required
 async def download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Download the file sent by the user."""
+    """Ask for confirmation before downloading a supported Telegram attachment."""
     logger.info("Download command received")
 
+    message = update.message
+    media_details = get_media_file_details(message)
+    if media_details is None:
+        return
+    file_id, file_name, file_size = media_details
+
     try:
-        check_file_exists(
-            update.message.document.file_id, update.message.document.file_name
-        )
+        check_file_exists(file_id, file_name)
     except Exception as e:
         logger.error(f"Error checking file exists: {e}")
-        await update.message.reply_text(
-            f"⛔ File already exists\!\nError:```\n{e}```",
+        await message.reply_text(
+            f"⛔ File already exists\\!\nError:```\n{e}```",
             parse_mode="MarkdownV2",
         )
         return
 
-    # File details
-    file_name = update.message.document.file_name
-    file_size = DownloadFile.convert_size(update.message.document.file_size)
-
     response_message = (
-        f"Are you sure you want to download the file?\n\n"
+        "Are you sure you want to download the file?\n\n"
         f"> 📄 *File name:*   `{file_name}`\n"
-        f"> 💾 *File size:*   `{file_size}`\n"
+        f"> 💾 *File size:*   `{DownloadFile.convert_size(file_size)}`\n"
     )
 
-    # Confirmation message
     await context.bot.send_message(
-        chat_id=update.message.chat_id,
+        chat_id=message.chat_id,
         text=response_message,
-        reply_to_message_id=update.message.message_id,
+        reply_to_message_id=message.message_id,
         parse_mode="MarkdownV2",
         reply_markup=InlineKeyboardMarkup(
             [
@@ -121,19 +185,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await query.answer()
 
-    # Replied to message
     message = update.effective_message.reply_to_message
-    file_id = message.document.file_id
-    file_name = message.document.file_name
-    file_size = message.document.file_size
+    media_details = get_media_file_details(message)
+    if media_details is None:
+        await message.reply_text("This message does not contain a downloadable file.")
+        return
+    file_id, file_name, file_size = media_details
 
-    # Remove buttons from the message
     await update.effective_message.edit_reply_markup(reply_markup=None)
 
     if query.data == "yes":
         logger.info("Downloading file...")
 
-        # Check if file already exists or is being downloaded
         try:
             check_file_exists(file_id, file_name)
         except Exception as e:
@@ -141,27 +204,26 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await message.reply_text(f"⛔ Error checking if file exists\n```\n{e}```")
             return
 
-        # Add file to downloading_files
-        download_file = DownloadFile(
-            file_id,
-            file_name,
-            file_size,
-        )
+        download_file = DownloadFile(file_id, file_name, file_size)
         downloading_files[file_id] = download_file
-
-        # Send downloading message
-        await message.reply_text("⬇️ Downloading file...")
+        progress_message = await message.reply_text("🔌 Connecting to Telegram...")
 
         try:
-            new_file = await get_file(context.bot, download_file)
+            os.makedirs(DOWNLOAD_TO_DIR, exist_ok=True)
+            move_to_path = os.path.join(DOWNLOAD_TO_DIR, file_name)
+            copy_elapsed, average_speed = await download_message_with_progress(
+                context.application.bot_data["telethon_client"],
+                context.application.bot_data["telethon_bot_username"],
+                message,
+                move_to_path,
+                download_file,
+                progress_message,
+            )
         except Exception as e:
             logger.error(f"Error downloading file: {e}")
             traceback.print_exc()
-
-            # Remove from current downloading files
-            downloading_files.pop(file_id)
-
-            await message.reply_text(
+            downloading_files.pop(file_id, None)
+            await progress_message.edit_text(
                 (
                     f"⛔ Error downloading file\n"
                     f"> 📄 *File name:*   `{download_file.file_name}`\n"
@@ -171,59 +233,29 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 parse_mode="MarkdownV2",
             )
             return
-        else:
-            download_file.download_complete()
 
-        # Rename the file to the original file name
-        file_path = new_file.file_path.split("/")[-1]
-        current_file_path = f"{BOT_API_DIR}{TOKEN_SUB_DIR}/documents/{file_path}"
-        move_to_path = f"{DOWNLOAD_TO_DIR}{file_name}"
-
-        # Move the file to the download directory
-        try:
-            os.makedirs(DOWNLOAD_TO_DIR, exist_ok=True)
-            os.rename(current_file_path, move_to_path)
-        except Exception as rename_error:
-            logger.error(f"Error RENAMING file: {rename_error}")
-
-            # Move the file instead of renaming
-            try:
-                await asyncio.to_thread(shutil.move, current_file_path, move_to_path)
-            except Exception as move_error:
-                logger.error(f"Error MOVING file: {move_error}")
-
-                downloading_files.pop(file_id)
-                await message.reply_text(
-                    (
-                        f"⛔ Error moving file\n"
-                        f"> 📂 *File path:*   `{file_path}`\n"
-                        f"> 📂 *Move to path:*   `{move_to_path}`\n"
-                        f"Rename error:\n```\n{rename_error}```\n"
-                        f"Move error:\n```\n{move_error}```"
-                    ),
-                    parse_mode="MarkdownV2",
-                )
-                return
-
+        download_file.download_complete()
         download_file.move_complete()
-        downloading_files.pop(file_id)
+        downloading_files.pop(file_id, None)
 
-        # If linux, give file correct permissions
         if platform.system() == "Linux":
             os.chmod(move_to_path, 0o664)
 
         response_message = (
             f"✅ File downloaded successfully\\.\n\n"
             f"> 📄 *File name:*   `{download_file.file_name}`\n"
-            f"> 📂 *File path:*   `{file_path}`\n"
+            f"> 📂 *File path:*   `{move_to_path}`\n"
             f"> 💾 *File size:*   `{download_file.file_size_mb}`\n"
+            f"> 📈 *Average speed:*   `{average_speed / (1024 * 1024):.2f} MB/s`\n"
+            f"> ⏱ *Elapsed:*   `{format_eta(copy_elapsed)}`\n"
+            "> ⏳ *ETA:*   `00:00`\n"
             f"> 🔻 *Retries:*   `{download_file.download_retries}`\n"
             f"> ⏱ *Download Duration:*   `{download_file.download_duration}`\n"
             f"> ⏱ *Moving Duration:*   `{download_file.move_duration}`\n"
             f"> ⏱ *Total Duration:*   `{download_file.total_duration}`"
         )
 
-        await message.reply_text(response_message, parse_mode="MarkdownV2")
+        await progress_message.edit_text(response_message, parse_mode="MarkdownV2")
     else:
         logger.info("Download cancelled")
         await message.reply_text("Download cancelled.")

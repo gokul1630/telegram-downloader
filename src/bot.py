@@ -5,6 +5,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from .cogs import downloader_commands, error_handler, general_commands
 from .utils import env
+from .utils.telethon_downloader import (
+    initialize_telethon_client,
+    shutdown_telethon_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,8 @@ def main() -> None:
         .local_mode(True)
         .base_url(f"{env.LOCAL_BOT_API_URL}/bot")
         .base_file_url(f"{env.LOCAL_BOT_API_URL}/file/bot")
+        .post_init(initialize_telethon_client)
+        .post_shutdown(shutdown_telethon_client)
         .build()
     )
 

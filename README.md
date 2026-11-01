@@ -9,17 +9,28 @@
 
 ## About<a name = "about"></a>
 
-This project is a Telegram bot designed for personal use, leveraging the [local Telegram Bot API server](https://github.com/tdlib/telegram-bot-api) to download large video files sent or forwarded to the bot, directly to a specified local directory.
+This project is a Telegram bot designed for personal use, leveraging the [local Telegram Bot API server](https://github.com/tdlib/telegram-bot-api) to download files sent or forwarded to the bot, directly to a specified local directory.
 
 It's a simple solution that doesn't require a desktop or graphical client, and maintains the original file name. It's particularly useful for forwarding large video files 🎬 to download onto a NAS system.
 
-## Telethon Version<a name = "telethon_version"></a>
+## Live Download Progress<a name = "telethon_version"></a>
 
-I initially rewrote the bot using [Telethon](https://docs.telethon.dev), which offers more control over the download process. With Telethon, you could potentially track download progress or stop downloads midway, but these features aren’t fully implemented yet.
+The bot uses [Telethon](https://docs.telethon.dev) with your Telegram user account to download media and report live bytes received, speed, elapsed time, and ETA. The account must match `USER_ID` and be able to access the chat containing the file.
 
-Despite this, I decided to stick with the **Bot API** version for its faster download speeds, even though it means giving up some of that control.
+Create the persistent session once after configuring `.env`. For Docker, build the current bot image, then create the session inside a one-off bot container so it is written to the same mounted downloads volume:
 
-If you’re still interested in exploring the Telethon version, it’s available on the [telethon-migrate branch](https://github.com/avibn/telegram-downloader/tree/telethon-migrate).
+```bash
+docker compose -f docker-compose.prod.yml build bot
+docker compose -f docker-compose.prod.yml run --rm --no-deps bot uv run python scripts/create_telethon_session.py
+```
+
+Enter your phone number, Telegram login code, and 2FA password if prompted. Then start the services:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+The session is saved in the mounted downloads volume (ignored by Git); keep it private like a password. For a non-Docker setup, run `uv run python scripts/create_telethon_session.py` from the project directory instead.
 
 ## Getting Started<a name = "getting_started"></a>
 
@@ -36,6 +47,7 @@ Using Docker is the easiest way to set this up. Follow these steps:
    | --- | --- |
    | `TELEGRAM_API_ID` | Your Telegram API ID. You can get this from [my.telegram.org](https://my.telegram.org/auth?to=apps). |
    | `TELEGRAM_API_HASH` | Your Telegram API Hash. You can get this from [my.telegram.org](https://my.telegram.org/auth?to=apps). |
+    | `TELETHON_SESSION_PATH` | Optional session file path without the `.session` suffix. Defaults to `downloads/telethon_user` relative to the bot working directory. |
    | `TELEGRAM_LOCAL` | Set this to `true` to use the local Telegram Bot API server. |
    | `BOT_TOKEN` | The token for your Telegram bot. You can create a new bot and get the token from [BotFather](https://t.me/botfather). |
    | `USER_ID` | Your Telegram user ID. This is the user that is allowed to send files to be downloaded with the bot (usually yourself). If you don't know your ID, you can use the `/info` command on the bot. |
@@ -77,7 +89,7 @@ If you prefer a manual setup, follow these steps:
     uv install
     ```
 
-4. Create a `.env` file in the project root and add your environment variables. You can use the `.example.env` file as a template.
+4. Create a `.env` file in the project root and add your environment variables. You can use the `.example.env` file as a template. Generate the Telethon session using the command in [Live Download Progress](#telethon_version); enter the same Telegram account configured as `USER_ID`.
 
 5. Run the bot using `uv`:
 
@@ -97,4 +109,4 @@ To use the bot, simply direct message it or add it to a group, depending on what
 
 You can use the `/help` command to learn more about how to use the bot.
 
-To download a video file, simply send/forward it to the bot. The bot will then ask you to confirm the download with a 'Yes' or 'No' button. Once you confirm, the bot will download the video file and notify you once the download is complete.
+To download a file, send or forward it to the bot. Confirm with **Yes**; the bot then shows live download speed, elapsed time, and ETA until the download completes.

@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     DOWNLOAD_TO_DIR: str
     USER_ID: str
     CHAT_ID: str
+    TELEGRAM_API_ID: int
+    TELEGRAM_API_HASH: str
+    TELETHON_SESSION_PATH: str = "downloads/telethon_user"
 
 
 logger.info("Loading environment variables")

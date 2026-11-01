@@ -10,9 +10,11 @@ services:
         volumes:
             - ${BOT_API_DIR}:/var/lib/telegram-bot-api
         restart: unless-stopped
+        env_file: .env
 
     bot:
-        image: ghcr.io/avibn/telegram-downloader:main
+        build:
+            context: .
         environment:
             LOCAL_BOT_API_URL: "http://telegram-bot-api:8081"
             BOT_API_DIR: "/var/lib/telegram-bot-api/"
@@ -26,3 +28,4 @@ services:
         depends_on:
             - telegram-bot-api
         restart: unless-stopped
+        env_file: .env
