@@ -243,7 +243,7 @@ async def download_message_with_progress(
     try:
         last_reported_bytes = -1
         while not download_task.done():
-            await asyncio.wait({download_task}, timeout=1.0)
+            await asyncio.wait({download_task}, timeout=3.0)
             if cancel_event.is_set():
                 download_task.cancel()
                 await asyncio.gather(download_task, return_exceptions=True)
