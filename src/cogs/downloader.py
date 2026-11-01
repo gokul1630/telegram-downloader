@@ -210,8 +210,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     file_id, file_name, file_size = media_details
 
-    await update.effective_message.edit_reply_markup(reply_markup=None)
-
     if query.data == "yes":
         logger.info("Downloading file...")
 
@@ -219,12 +217,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             check_file_exists(file_id, file_name)
         except Exception as e:
             logger.error(f"Error checking file exists: {e}")
-            await message.reply_text(f"⛔ Error checking if file exists\n```\n{e}```")
+            await update.effective_message.edit_text(
+                f"⛔ Error checking if file exists\n```\n{e}```",
+                parse_mode="MarkdownV2",
+            )
             return
 
         download_file = DownloadFile(file_id, file_name, file_size)
         downloading_files[file_id] = download_file
-        progress_message = await message.reply_text("🔌 Connecting to Telegram...")
+        progress_message = update.effective_message
         cancel_event = asyncio.Event()
         cancel_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton("Cancel", callback_data="cancel_download")]]
@@ -233,7 +234,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "active_download_cancellations", {}
         )
         cancellation_events[progress_message.message_id] = cancel_event
-        await progress_message.edit_reply_markup(reply_markup=cancel_markup)
+        await progress_message.edit_text(
+            "🔌 Connecting to Telegram...",
+            reply_markup=cancel_markup,
+        )
 
         try:
             os.makedirs(DOWNLOAD_TO_DIR, exist_ok=True)
@@ -293,4 +297,4 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await progress_message.edit_text(response_message, parse_mode="MarkdownV2")
     else:
         logger.info("Download cancelled")
-        await message.reply_text("Download cancelled.")
+        await update.effective_message.edit_text("Download cancelled.")
