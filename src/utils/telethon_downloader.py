@@ -54,9 +54,9 @@ async def initialize_telethon_client(application) -> None:
             )
 
         account = await client.get_me()
-        if str(account.id) not in env.allowed_user_ids:
+        if str(account.id) != env.USER_ID:
             raise RuntimeError(
-                "Telethon session account must be one of the configured USER_IDS."
+                "Telethon session account does not match configured USER_ID."
             )
 
         bot = await application.bot.get_me()

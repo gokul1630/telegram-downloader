@@ -15,7 +15,7 @@ It's a simple solution that doesn't require a desktop or graphical client, and m
 
 ## Live Download Progress<a name = "telethon_version"></a>
 
-The bot uses [Telethon](https://docs.telethon.dev) with your Telegram user account to download media and report live bytes received, speed, elapsed time, and ETA. The session account must be included in `USER_IDS` (or match the legacy `USER_ID`) and be able to access the chat containing the file.
+The bot uses [Telethon](https://docs.telethon.dev) with your Telegram user account to download media and report live bytes received, speed, elapsed time, and ETA. The account must match `USER_ID` and be able to access the chat containing the file.
 
 Create the persistent session once after configuring `.env`. For Docker, build the current bot image, then create the session inside a one-off bot container so it is written to the same mounted downloads volume:
 
@@ -50,8 +50,8 @@ Using Docker is the easiest way to set this up. Follow these steps:
     | `TELETHON_SESSION_PATH` | Optional session file path without the `.session` suffix. Defaults to `downloads/telethon_user` relative to the bot working directory. |
    | `TELEGRAM_LOCAL` | Set this to `true` to use the local Telegram Bot API server. |
    | `BOT_TOKEN` | The token for your Telegram bot. You can create a new bot and get the token from [BotFather](https://t.me/botfather). |
-    | `USER_ID` / `USER_IDS` | Legacy single user ID and optional comma-separated list of allowed Telegram user IDs. The Telethon session account must be in this list. |
-    | `CHAT_ID` / `CHAT_IDS` | Legacy single chat ID and optional comma-separated list of allowed chat IDs. For multiple users in DMs, include each user's chat ID; for a group, include the group ID. |
+   | `USER_ID` | Your Telegram user ID. This is the user that is allowed to send files to be downloaded with the bot (usually yourself). If you don't know your ID, you can use the `/info` command on the bot. |
+   | `CHAT_ID` | The ID of the chat that the bot is allowed to download from. This can be the same as your `USER_ID` if you want to send files directly via DM to the bot. If you don't know the chat ID, you can use the `/info` command on the bot. |
    | `DOWNLOAD_TO_DIR` | The output directory where you want to download the files to (e.g., your downloads folder). |
    | `BOT_API_DIR` | The directory where the local bot API stores its files. You can alternatively edit the docker-compose file to use a Docker volume instead. In my case, I wanted to store it in a specific directory. |
 
@@ -89,7 +89,7 @@ If you prefer a manual setup, follow these steps:
     uv install
     ```
 
-4. Create a `.env` file in the project root and add your environment variables. You can use the `.example.env` file as a template. Generate the Telethon session using the command in [Live Download Progress](#telethon_version); sign in with an account included in `USER_IDS` or `USER_ID`.
+4. Create a `.env` file in the project root and add your environment variables. You can use the `.example.env` file as a template. Generate the Telethon session using the command in [Live Download Progress](#telethon_version); enter the same Telegram account configured as `USER_ID`.
 
 5. Run the bot using `uv`:
 

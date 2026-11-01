@@ -10,15 +10,10 @@ async def main() -> None:
     load_dotenv()
     api_id = os.getenv("TELEGRAM_API_ID")
     api_hash = os.getenv("TELEGRAM_API_HASH")
-    allowed_user_ids = {
-        user_id.strip()
-        for value in (os.getenv("USER_ID", ""), os.getenv("USER_IDS", ""))
-        for user_id in value.split(",")
-        if user_id.strip()
-    }
-    if not api_id or not api_hash or not allowed_user_ids:
+    expected_user_id = os.getenv("USER_ID")
+    if not api_id or not api_hash or not expected_user_id:
         raise RuntimeError(
-            "Set TELEGRAM_API_ID, TELEGRAM_API_HASH, and USER_ID or USER_IDS in .env first."
+            "Set TELEGRAM_API_ID, TELEGRAM_API_HASH, and USER_ID in .env first."
         )
 
     session_path = Path(
@@ -30,9 +25,9 @@ async def main() -> None:
     await client.start()
     try:
         account = await client.get_me()
-        if str(account.id) not in allowed_user_ids:
+        if str(account.id) != expected_user_id:
             raise RuntimeError(
-                f"Signed in as account {account.id}, which is not in USER_ID/USER_IDS."
+                f"Signed in as account {account.id}, but USER_ID is {expected_user_id}."
             )
         print(f"Telethon session created for Telegram account {account.id}.")
         print(f"Session file: {session_path}.session")
