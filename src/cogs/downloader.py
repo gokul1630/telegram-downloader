@@ -23,7 +23,11 @@ from ..middlewares.handlers import (
 )
 from ..models import DownloadFile, downloading_files
 from ..utils import check_file_exists, env
-from ..utils.telethon_downloader import download_message_with_progress, format_eta
+from ..utils.telethon_downloader import (
+    DownloadCancelled,
+    download_message_with_progress,
+    format_eta,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +187,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info("Button command received")
     query = update.callback_query
 
+    if query.data == "cancel_download":
+        progress_message = update.effective_message
+        cancellation_events = context.application.bot_data.get(
+            "active_download_cancellations", {}
+        )
+        cancel_event = cancellation_events.get(progress_message.message_id)
+        await progress_message.edit_reply_markup(reply_markup=None)
+        if cancel_event is None:
+            await query.answer("This download is no longer active.")
+        else:
+            await query.answer("Cancelling download...")
+            cancel_event.set()
+        return
+
     await query.answer()
 
     message = update.effective_message.reply_to_message
@@ -207,6 +225,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         download_file = DownloadFile(file_id, file_name, file_size)
         downloading_files[file_id] = download_file
         progress_message = await message.reply_text("🔌 Connecting to Telegram...")
+        cancel_event = asyncio.Event()
+        cancel_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Cancel", callback_data="cancel_download")]]
+        )
+        cancellation_events = context.application.bot_data.setdefault(
+            "active_download_cancellations", {}
+        )
+        cancellation_events[progress_message.message_id] = cancel_event
+        await progress_message.edit_reply_markup(reply_markup=cancel_markup)
 
         try:
             os.makedirs(DOWNLOAD_TO_DIR, exist_ok=True)
@@ -218,7 +245,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 move_to_path,
                 download_file,
                 progress_message,
+                cancel_event,
+                cancel_markup,
             )
+        except DownloadCancelled:
+            downloading_files.pop(file_id, None)
+            await progress_message.edit_text("Download cancelled.")
+            return
         except Exception as e:
             logger.error(f"Error downloading file: {e}")
             traceback.print_exc()
@@ -233,6 +266,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 parse_mode="MarkdownV2",
             )
             return
+        finally:
+            cancellation_events.pop(progress_message.message_id, None)
 
         download_file.download_complete()
         download_file.move_complete()

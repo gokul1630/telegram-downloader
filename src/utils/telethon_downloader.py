@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from telegram import Message as BotMessage
+from telegram import InlineKeyboardMarkup, Message as BotMessage
 from telegram.error import TelegramError
 from telethon import TelegramClient
 
@@ -13,6 +13,10 @@ from ..models import DownloadFile
 from .env import env
 
 logger = logging.getLogger(__name__)
+
+
+class DownloadCancelled(Exception):
+    pass
 
 
 def format_eta(seconds: float) -> str:
@@ -74,9 +78,13 @@ async def shutdown_telethon_client(application) -> None:
         await client.disconnect()
 
 
-async def _edit_progress_message(message: BotMessage, text: str) -> None:
+async def _edit_progress_message(
+    message: BotMessage,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
     try:
-        await message.edit_text(text)
+        await message.edit_text(text, reply_markup=reply_markup)
     except TelegramError:
         logger.warning("Could not update download progress message", exc_info=True)
 
@@ -143,6 +151,8 @@ async def download_message_with_progress(
     destination_path: str,
     file: DownloadFile,
     progress_message: BotMessage,
+    cancel_event: asyncio.Event,
+    cancel_markup: InlineKeyboardMarkup,
 ) -> tuple[float, float]:
     if os.path.exists(destination_path):
         raise FileExistsError(f"File already exists: {destination_path}")
@@ -162,6 +172,8 @@ async def download_message_with_progress(
     lookup_errors = []
     history_scan_attempted = False
     for entity, message_id in lookup_candidates:
+        if cancel_event.is_set():
+            raise DownloadCancelled()
         try:
             source_message = await client.get_messages(entity, ids=message_id)
         except Exception as error:
@@ -171,6 +183,8 @@ async def download_message_with_progress(
             break
 
     if source_message is None or source_message.media is None:
+        if cancel_event.is_set():
+            raise DownloadCancelled()
         history_scan_attempted = True
         try:
             source_message = await _find_recent_media_message(
@@ -181,6 +195,9 @@ async def download_message_with_progress(
             )
         except Exception as error:
             lookup_errors.append(f"recent history in chat {source_entity}: {error}")
+
+    if cancel_event.is_set():
+        raise DownloadCancelled()
 
     if source_message is None or source_message.media is None:
         locations = ", ".join(
@@ -227,6 +244,10 @@ async def download_message_with_progress(
         last_reported_bytes = -1
         while not download_task.done():
             await asyncio.wait({download_task}, timeout=1.0)
+            if cancel_event.is_set():
+                download_task.cancel()
+                await asyncio.gather(download_task, return_exceptions=True)
+                raise DownloadCancelled()
             received = progress["received"]
             total = progress["total"]
             elapsed = max(time.monotonic() - started_at, 0.001)
@@ -245,12 +266,22 @@ async def download_message_with_progress(
                     f"Speed: {speed / (1024 * 1024):.2f} MB/s\n"
                     f"Elapsed: {format_eta(elapsed)}\n"
                     f"ETA: {eta_display}",
+                    reply_markup=cancel_markup,
                 )
                 last_reported_bytes = received
 
         result = await download_task
         if result is None:
             raise RuntimeError("Telethon returned no downloaded file.")
+    except asyncio.CancelledError:
+        download_task.cancel()
+        await asyncio.gather(download_task, return_exceptions=True)
+        if os.path.exists(destination_path):
+            try:
+                os.remove(destination_path)
+            except OSError:
+                logger.exception("Could not remove partial download")
+        raise
     except Exception:
         download_task.cancel()
         if os.path.exists(destination_path):
