@@ -103,6 +103,7 @@ def get_media_file_details(message: Message) -> tuple[str, str, int] | None:
 
 
 @command_handler("status")
+@auth_required
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send downloading files status to the user."""
     if not downloading_files:

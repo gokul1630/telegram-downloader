@@ -5,6 +5,7 @@ import shutil
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from ..middlewares.auth import auth_required
 from ..middlewares.handlers import command_handler
 from ..utils import env
 
@@ -23,6 +24,7 @@ commands = {
 
 
 @command_handler("help")
+@auth_required
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a list of available commands to the user."""
     commands_list = "The following commands are available:\n" + "\n".join(
@@ -35,6 +37,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 @command_handler("start")
+@auth_required
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a start message to the user."""
     user = update.effective_user
@@ -46,6 +49,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @command_handler("info")
+@auth_required
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send user and chat IDs to the user."""
     user = update.effective_user
@@ -56,6 +60,7 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @command_handler("storage")
+@auth_required
 async def storage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send available storage information of the specified folder."""
     if os.path.exists(DOWNLOAD_TO_DIR):

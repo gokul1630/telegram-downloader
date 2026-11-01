@@ -13,7 +13,7 @@ services:
     bot:
         # build:
             # context: .
-        image: gokul1630/telegram-downloader:0.4
+        image: gokul1630/telegram-downloader:0.5
         environment:
             LOCAL_BOT_API_URL: "http://telegram-bot-api:8081"
             BOT_API_DIR: "/var/lib/telegram-bot-api/"
