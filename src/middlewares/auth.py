@@ -5,8 +5,8 @@ from telegram.ext import ContextTypes
 
 from ..utils import env
 
-USER_ID = env.USER_ID
-CHAT_ID = env.CHAT_ID
+ALLOWED_USER_IDS = env.allowed_user_ids
+ALLOWED_CHAT_IDS = env.allowed_chat_ids
 
 
 def auth_required(func):
@@ -25,12 +25,12 @@ def auth_required(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if (
-            str(update.effective_user.id) != USER_ID
-            or str(update.effective_chat.id) != CHAT_ID
+            str(update.effective_user.id) not in ALLOWED_USER_IDS
+            or str(update.effective_chat.id) not in ALLOWED_CHAT_IDS
         ):
             await update.effective_message.reply_text(
                 "Unauthorized user or chat.\n"
-                "Please verify the values of `USER_ID` and `CHAT_ID` in environment variables.",
+                "Please verify the values of `USER_IDS`/`USER_ID` and `CHAT_IDS`/`CHAT_ID` in environment variables.",
                 parse_mode="markdown",
             )
             return
