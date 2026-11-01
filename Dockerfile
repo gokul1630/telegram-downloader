@@ -1,11 +1,14 @@
 # Use an official Python runtime as a parent image
-FROM python:3.11.9-bookworm
+FROM python:3.11-slim
 
 # Install necessary packages
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Add and run the UV installer script
-ADD https://astral.sh/uv/0.5.9/install.sh /uv-installer.sh
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
 RUN sh /uv-installer.sh && rm /uv-installer.sh
 
 # Set environment variables
