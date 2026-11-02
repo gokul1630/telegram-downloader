@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     LOCAL_BOT_API_URL: str
     BOT_API_DIR: str
     DOWNLOAD_TO_DIR: str
+    TEMP_DOWNLOAD_DIR: str = "./.tmp/"
     USER_ID: str
     CHAT_ID: str
     TELEGRAM_API_ID: int

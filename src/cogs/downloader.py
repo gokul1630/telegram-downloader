@@ -4,6 +4,7 @@ import math
 import mimetypes
 import os
 import platform
+import shutil
 import traceback
 from typing import Any
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 DOWNLOAD_TO_DIR = env.DOWNLOAD_TO_DIR
+TEMP_DOWNLOAD_DIR = env.TEMP_DOWNLOAD_DIR
 
 DOWNLOADABLE_MEDIA_FILTER = (
     filters.Document.ALL
@@ -240,19 +242,24 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             reply_markup=cancel_markup,
         )
 
+        move_to_path = os.path.join(DOWNLOAD_TO_DIR, file_name)
+        temp_path = os.path.join(TEMP_DOWNLOAD_DIR, file_name)
         try:
             os.makedirs(DOWNLOAD_TO_DIR, exist_ok=True)
-            move_to_path = os.path.join(DOWNLOAD_TO_DIR, file_name)
+            os.makedirs(TEMP_DOWNLOAD_DIR, exist_ok=True)
             copy_elapsed, average_speed = await download_message_with_progress(
                 context.application.bot_data["telethon_client"],
                 context.application.bot_data["telethon_bot_username"],
                 message,
-                move_to_path,
+                temp_path,
                 download_file,
                 progress_message,
                 cancel_event,
                 cancel_markup,
             )
+            download_file.download_complete()
+            await asyncio.to_thread(shutil.move, temp_path, move_to_path)
+            download_file.move_complete()
         except DownloadCancelled:
             downloading_files.pop(file_id, None)
             await progress_message.edit_text("Download cancelled.")
@@ -261,6 +268,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.error(f"Error downloading file: {e}")
             traceback.print_exc()
             downloading_files.pop(file_id, None)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             await progress_message.edit_text(
                 (
                     f"⛔ Error downloading file\n"
@@ -274,8 +283,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         finally:
             cancellation_events.pop(progress_message.message_id, None)
 
-        download_file.download_complete()
-        download_file.move_complete()
         downloading_files.pop(file_id, None)
 
         if platform.system() == "Linux":
