@@ -303,6 +303,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
         await progress_message.edit_text(response_message, parse_mode="MarkdownV2")
+        await context.bot.send_message(
+            chat_id=progress_message.chat_id,
+            text=f"Downloaded: {download_file.file_name}",
+        )
     else:
         logger.info("Download cancelled")
         await update.effective_message.edit_text("Download cancelled.")
