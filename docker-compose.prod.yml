@@ -18,11 +18,13 @@ services:
             LOCAL_BOT_API_URL: "http://telegram-bot-api:8081"
             BOT_API_DIR: "/var/lib/telegram-bot-api/"
             DOWNLOAD_TO_DIR: "./downloads/"
+            TEMP_DOWNLOAD_DIR: "/app/.tmp/"
             BOT_TOKEN: "${BOT_TOKEN}"
             USER_ID: "${USER_ID}"
             CHAT_ID: "${CHAT_ID}"
         volumes:
             - ${DOWNLOAD_TO_DIR}:/app/downloads
+            - ${TEMP_DOWNLOAD_DIR}:/app/.tmp
             - ${BOT_API_DIR}:/var/lib/telegram-bot-api
         depends_on:
             - telegram-bot-api
